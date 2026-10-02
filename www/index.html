@@ -9,7 +9,7 @@
 *{box-sizing:border-box}html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
 main{max-width:640px;margin:0 auto;padding:16px}
-h1{font-size:28px;margin:0 0 12px}h2{font-size:18px;margin:20px 0 8px}p{color:var(--mut);margin:0 0 10px}
+h1{font-size:28px;margin:0 0 12px}p{color:var(--mut);margin:0 0 10px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px}
 .lbl{font-size:14px;color:var(--mut)}.big{font-size:32px;font-weight:800}.sub{font-size:14px;color:var(--mut)}
 button,select{font:inherit;color:inherit;border:1px solid var(--line);background:var(--card);border-radius:14px;padding:10px 14px;cursor:pointer}
@@ -17,17 +17,33 @@ button.p{background:var(--ac);color:var(--bg);border:0;font-weight:700}
 .chips{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px}.chips button{white-space:nowrap;border-radius:99px}.chips .on{background:var(--ac);color:var(--bg)}
 .row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.row:last-child{border:0}
 .bar{height:6px;background:var(--line);border-radius:9px;margin-top:4px}.bar i{display:block;height:100%;background:var(--ac);border-radius:9px}
+.err{color:#c0392b;font-size:14px}
 nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
 nav button{flex:1;border:0;border-radius:0;background:none;padding:14px 4px;font-size:13px}nav .on{color:var(--ac);font-weight:700}
 svg text{fill:var(--mut);font-size:10px}svg rect{fill:var(--ac)}
 </style></head><body><main id="app"></main>
 <nav id="nav"></nav>
 <script>
-const US=(window.Capacitor&&Capacitor.registerPlugin)?Capacitor.registerPlugin('UsageStats'):null;
 const K='st_days',LK='st_last',TK='st_theme';
 let D={};try{D=JSON.parse(localStorage.getItem(K))||{}}catch(e){}
 let tab='home',range=30,granted=false,msg='';
 const TABS=[['home','Accueil'],['stats','Stats'],['apps','Applis'],['hist','Historique'],['set','Réglages']];
+
+/* ---- Pont natif : cherché à chaque appel, avec message d'erreur précis ---- */
+function getUS(){
+  const C=window.Capacitor;
+  if(!C){msg="Capacitor introuvable : ouvre l'appli installée (APK), pas un navigateur.";return null}
+  if(C.isNativePlatform&&!C.isNativePlatform()){msg="Tu es dans un navigateur : ouvre l'appli installée (APK).";return null}
+  try{
+    const u=(C.Plugins&&C.Plugins.UsageStats)||(C.registerPlugin&&C.registerPlugin('UsageStats'));
+    if(u)return u;
+  }catch(e){msg='Erreur plugin : '+(e.message||e);return null}
+  msg='Plugin UsageStats introuvable.';return null;
+}
+const errTxt=e=>{const s=String((e&&e.message)||e);return /not implemented|UNIMPLEMENTED/i.test(s)
+  ?"Plugin natif non installé dans l'APK : vérifie que android-native/MainActivity.java et UsageStatsPlugin.java sont dans le dépôt, puis recompile."
+  :'Erreur : '+s};
+
 const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const fmt=ms=>{const m=Math.round(ms/6e4);return Math.floor(m/60)+' h '+String(m%60).padStart(2,'0')};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -35,9 +51,12 @@ const day=i=>{const t=new Date();return new Date(t.getFullYear(),t.getMonth(),t.
 const span=(n,off=0)=>{const o=[];for(let i=off;i<off+n;i++){const k=iso(day(i));if(D[k])o.push([k,D[k]])}return o};
 const sum=a=>a.reduce((s,x)=>s+x[1].t,0),avg=a=>a.length?sum(a)/a.length:null;
 const A=v=>v==null?'Indisponible':fmt(v);
+
 async function sync(){
-  if(!US){msg='Fonction native indisponible (ouvre l\'appli Android).';return}
-  try{granted=(await US.hasAccess()).granted}catch(e){granted=false}
+  msg='';
+  const US=getUS();
+  if(!US){granted=false;return}
+  try{granted=(await US.hasAccess()).granted}catch(e){granted=false;msg=errTxt(e);return}
   if(!granted)return;
   const now=new Date();
   for(let i=0;i<10;i++){
@@ -47,6 +66,12 @@ async function sync(){
   }
   localStorage.setItem(K,JSON.stringify(D));localStorage.setItem(LK,Date.now());
 }
+async function openS(){
+  const US=getUS();
+  if(!US){draw();return}
+  try{await US.openSettings()}catch(e){msg=errTxt(e);draw()}
+}
+
 const card=(l,v,s)=>`<div class="card"><div class="lbl">${l}</div><div class="big">${v}</div>${s?`<div class="sub">${s}</div>`:''}</div>`;
 function home(){
   const t=D[iso(day(0))],w=span(7),p=span(7,7),m=span(day(0).getDate()),y=span(365);
@@ -83,25 +108,27 @@ function hist(){
   const M={};Object.keys(D).sort().forEach(k=>{const m=k.slice(0,7);M[m]=M[m]||{t:0,n:0};M[m].t+=D[k].t;M[m].n++});
   const ks=Object.keys(M).reverse();
   return '<h1>Historique</h1>'+(ks.length?'<div class="card">'+ks.map(m=>`<div class="row"><span>${m}</span><span>${fmt(M[m].t)} · moy. ${fmt(M[m].t/M[m].n)} (${M[m].n} j)</span></div>`).join('')+'</div>':'<p>Aucune donnée enregistrée.</p>')
-   +'<p>L\'historique est conservé uniquement sur ce téléphone.</p>';
+   +"<p>L'historique est conservé uniquement sur ce téléphone.</p>";
 }
 function settings(){
   const l=+localStorage.getItem(LK),th=localStorage.getItem(TK)||'auto';
-  return '<h1>Réglages</h1>'+`<div class="card"><b>Accès aux données d'utilisation :</b> ${granted?'accordé':'non accordé'}<p class="sub">Permission Android utilisée pour lire le temps passé dans chaque appli. Rien n'est envoyé sur un serveur.</p><button class="p" onclick="US&&US.openSettings()">Ouvrir les réglages Android</button></div>`
+  return '<h1>Réglages</h1>'+`<div class="card"><b>Accès aux données d'utilisation :</b> ${granted?'accordé':'non accordé'}<p class="sub">Permission Android utilisée pour lire le temps passé dans chaque appli. Rien n'est envoyé sur un serveur.</p><button class="p" onclick="openS()">Ouvrir les réglages Android</button></div>`
    +`<div class="card"><b>Dernière synchro :</b> ${l?new Date(l).toLocaleString('fr-FR'):'jamais'}<br><br><button onclick="go()">Synchroniser maintenant</button></div>`
    +`<div class="card"><b>Thème</b><br><select onchange="theme(this.value)">${[['auto','Automatique'],['light','Clair'],['dark','Sombre']].map(o=>`<option value="${o[0]}" ${o[0]==th?'selected':''}>${o[1]}</option>`).join('')}</select></div>`
-   +`<div class="card"><b>Confidentialité</b><p>Données stockées localement. Aucune vente ni partage.</p><button onclick="wipe()">Supprimer toutes mes données</button></div>`+(msg?`<p>${esc(msg)}</p>`:'');
+   +`<div class="card"><b>Confidentialité</b><p>Données stockées localement. Aucune vente ni partage.</p><button onclick="wipe()">Supprimer toutes mes données</button></div>`
+   +(msg?`<p class="err">${esc(msg)}</p>`:'');
 }
 function theme(v){localStorage.setItem(TK,v);v=='auto'?document.documentElement.removeAttribute('data-theme'):document.documentElement.setAttribute('data-theme',v)}
-function wipe(){if(confirm('Supprimer tout l\'historique ?')){D={};localStorage.removeItem(K);localStorage.removeItem(LK);draw()}}
+function wipe(){if(confirm("Supprimer tout l'historique ?")){D={};localStorage.removeItem(K);localStorage.removeItem(LK);draw()}}
 function draw(){
   document.getElementById('nav').innerHTML=TABS.map(t=>`<button class="${t[0]==tab?'on':''}" onclick="tab='${t[0]}';draw()">${t[1]}</button>`).join('');
   let h;
-  if(!granted&&tab!='set'&&US)h='<h1>Autorisation requise</h1><p>Active « Accès aux données d\'utilisation » pour ScreenTime Stats afin de lire ton temps d\'écran.</p><button class="p" onclick="US.openSettings()">Ouvrir les réglages Android</button>';
-  else h={home,stats,apps,hist,set:settings}[tab]();
+  if(!granted&&tab!='set'){
+    h='<h1>Autorisation requise</h1><p>Active « Accès aux données d\'utilisation » pour ScreenTime Stats afin de lire ton temps d\'écran, puis reviens dans l\'appli.</p><button class="p" onclick="openS()">Ouvrir les réglages Android</button>'+(msg?`<p class="err">${esc(msg)}</p>`:'');
+  } else h={home,stats,apps,hist,set:settings}[tab]();
   document.getElementById('app').innerHTML=h;
 }
-async function go(){try{await sync()}catch(e){msg='Erreur de synchro : '+e}draw()}
+async function go(){try{await sync()}catch(e){msg=errTxt(e)}draw()}
 theme(localStorage.getItem(TK)||'auto');
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)go()});
 draw();go();
