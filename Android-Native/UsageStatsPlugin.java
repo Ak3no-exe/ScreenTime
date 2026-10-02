@@ -17,7 +17,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Pont natif : lit les événements d'usage Android (UsageStatsManager) et les renvoie à l'interface. */
 @CapacitorPlugin(name = "UsageStats")
 public class UsageStatsPlugin extends Plugin {
 
@@ -42,7 +41,6 @@ public class UsageStatsPlugin extends Plugin {
         call.resolve();
     }
 
-    /** Entrée : start, end (ms). Sortie : apps[{pkg,label,ms,opens}]. Liste vide si le système n'a rien. */
     @PluginMethod
     public void getDay(PluginCall call) {
         JSArray out = new JSArray();
