@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ScreenTime Stats</title>
+<style>
+:root{--bg:#f2f4fb;--card:#fff;--ink:#141a2e;--mut:#5b6585;--ac:#3b5bff;--line:#dce1f0;padding-top:env(safe-area-inset-top,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1224;--card:#161c33;--ink:#eef1ff;--mut:#9aa5c9;--ac:#7c93ff;--line:#262e4d}}
+:root[data-theme="dark"]{--bg:#0d1224;--card:#161c33;--ink:#eef1ff;--mut:#9aa5c9;--ac:#7c93ff;--line:#262e4d}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:28px;margin:0 0 12px}h2{font-size:18px;margin:20px 0 8px}p{color:var(--mut);margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px}
+.lbl{font-size:14px;color:var(--mut)}.big{font-size:32px;font-weight:800}.sub{font-size:14px;color:var(--mut)}
+button,select{font:inherit;color:inherit;border:1px solid var(--line);background:var(--card);border-radius:14px;padding:10px 14px;cursor:pointer}
+button.p{background:var(--ac);color:var(--bg);border:0;font-weight:700}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px}.chips button{white-space:nowrap;border-radius:99px}.chips .on{background:var(--ac);color:var(--bg)}
+.row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.row:last-child{border:0}
+.bar{height:6px;background:var(--line);border-radius:9px;margin-top:4px}.bar i{display:block;height:100%;background:var(--ac);border-radius:9px}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;border:0;border-radius:0;background:none;padding:14px 4px;font-size:13px}nav .on{color:var(--ac);font-weight:700}
+svg text{fill:var(--mut);font-size:10px}svg rect{fill:var(--ac)}
+</style></head><body><main id="app"></main>
+<nav id="nav"></nav>
+<script>
+const US=(window.Capacitor&&Capacitor.registerPlugin)?Capacitor.registerPlugin('UsageStats'):null;
+const K='st_days',LK='st_last',TK='st_theme';
+let D={};try{D=JSON.parse(localStorage.getItem(K))||{}}catch(e){}
+let tab='home',range=30,granted=false,msg='';
+const TABS=[['home','Accueil'],['stats','Stats'],['apps','Applis'],['hist','Historique'],['set','Réglages']];
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const fmt=ms=>{const m=Math.round(ms/6e4);return Math.floor(m/60)+' h '+String(m%60).padStart(2,'0')};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const day=i=>{const t=new Date();return new Date(t.getFullYear(),t.getMonth(),t.getDate()-i)};
+const span=(n,off=0)=>{const o=[];for(let i=off;i<off+n;i++){const k=iso(day(i));if(D[k])o.push([k,D[k]])}return o};
+const sum=a=>a.reduce((s,x)=>s+x[1].t,0),avg=a=>a.length?sum(a)/a.length:null;
+const A=v=>v==null?'Indisponible':fmt(v);
+async function sync(){
+  if(!US){msg='Fonction native indisponible (ouvre l\'appli Android).';return}
+  try{granted=(await US.hasAccess()).granted}catch(e){granted=false}
+  if(!granted)return;
+  const now=new Date();
+  for(let i=0;i<10;i++){
+    const s=day(i),e=i?day(i-1):now;
+    const r=await US.getDay({start:s.getTime(),end:e.getTime()});
+    if(r.apps&&r.apps.length){const a={};let t=0;r.apps.forEach(x=>{a[x.pkg]={l:x.label,ms:x.ms,o:x.opens};t+=x.ms});D[iso(s)]={t,a}}
+  }
+  localStorage.setItem(K,JSON.stringify(D));localStorage.setItem(LK,Date.now());
+}
+const card=(l,v,s)=>`<div class="card"><div class="lbl">${l}</div><div class="big">${v}</div>${s?`<div class="sub">${s}</div>`:''}</div>`;
+function home(){
+  const t=D[iso(day(0))],w=span(7),p=span(7,7),m=span(day(0).getDate()),y=span(365);
+  const aw=avg(w),ap=avg(p);
+  const dl=aw!=null&&ap!=null?Math.round((aw/ap-1)*100):null;
+  return '<h1>Accueil</h1>'+card("Aujourd'hui",t?fmt(t.t):'Indisponible')
+   +card('7 derniers jours',w.length?fmt(sum(w)):'Indisponible','Moyenne : '+A(aw)+(dl==null?'':' · '+(dl>=0?'+':'')+dl+' % vs période précédente'))
+   +card('Ce mois',m.length?fmt(sum(m)):'Indisponible','Moyenne : '+A(avg(m)))
+   +card('Moyenne quotidienne (année)',A(avg(y)),y.length+' jour(s) de données');
+}
+function chart(){
+  let pts=[];for(let i=range-1;i>=0;i--){const k=iso(day(i));pts.push([k,D[k]?D[k].t:null])}
+  if(range>31){const g=[];for(let i=0;i<pts.length;i+=7){const c=pts.slice(i,i+7).filter(x=>x[1]!=null);g.push([pts[i][0],c.length?c.reduce((s,x)=>s+x[1],0)/c.length:null])}pts=g}
+  const mx=Math.max(1,...pts.map(x=>x[1]||0)),W=320,H=120,bw=W/pts.length;
+  return `<svg viewBox="0 0 ${W} ${H+14}" width="100%">`+pts.map((x,i)=>{const h=x[1]?Math.max(2,x[1]/mx*H):0;return `<rect x="${i*bw+1}" y="${H-h}" width="${Math.max(1,bw-2)}" height="${h}" rx="2"/>`}).join('')
+   +`<text x="0" y="${H+12}">${pts[0][0].slice(5)}</text><text x="${W}" y="${H+12}" text-anchor="end">max ${fmt(mx)}</text></svg>`;
+}
+function stats(){
+  const r=[7,30,90,180,365],cur=span(range),prev=span(range,range),a=avg(cur),b=avg(prev);
+  const d=a!=null&&b!=null?Math.round((a/b-1)*100):null;
+  return '<h1>Statistiques</h1><div class="chips">'+r.map(n=>`<button class="${n==range?'on':''}" onclick="range=${n};draw()">${n==7?'7 j':n==30?'30 j':n==90?'3 mois':n==180?'6 mois':'1 an'}</button>`).join('')+'</div>'
+   +`<div class="card">${chart()}<p class="sub">${range>31?'Moyenne par semaine':'Temps par jour'}</p></div>`
+   +card('Moyenne quotidienne',A(a),cur.length+' jour(s) de données')
+   +card('Période précédente',A(b),d==null?'Comparaison indisponible':(d>=0?'+':'')+d+' % pour la période actuelle');
+}
+function apps(){
+  const T={};let tot=0;
+  span(range).forEach(([k,v])=>{for(const p in v.a){const x=v.a[p];T[p]=T[p]||{l:x.l,ms:0,o:0};T[p].ms+=x.ms;T[p].o+=x.o;tot+=x.ms}});
+  const L=Object.values(T).sort((a,b)=>b.ms-a.ms).slice(0,30);
+  return '<h1>Applications</h1><div class="chips">'+[7,30,90].map(n=>`<button class="${n==range?'on':''}" onclick="range=${n};draw()">${n} j</button>`).join('')+'</div>'
+   +(L.length?'<div class="card">'+L.map((x,i)=>{const pc=Math.round(x.ms/tot*100);return `<div class="row"><div style="flex:1"><b>${i+1}. ${esc(x.l)}</b><div class="sub">${pc} % · ${x.o} ouvertures</div><div class="bar"><i style="width:${pc}%"></i></div></div><b>${fmt(x.ms)}</b></div>`}).join('')+'</div>':'<p>Aucune donnée pour cette période.</p>');
+}
+function hist(){
+  const M={};Object.keys(D).sort().forEach(k=>{const m=k.slice(0,7);M[m]=M[m]||{t:0,n:0};M[m].t+=D[k].t;M[m].n++});
+  const ks=Object.keys(M).reverse();
+  return '<h1>Historique</h1>'+(ks.length?'<div class="card">'+ks.map(m=>`<div class="row"><span>${m}</span><span>${fmt(M[m].t)} · moy. ${fmt(M[m].t/M[m].n)} (${M[m].n} j)</span></div>`).join('')+'</div>':'<p>Aucune donnée enregistrée.</p>')
+   +'<p>L\'historique est conservé uniquement sur ce téléphone.</p>';
+}
+function settings(){
+  const l=+localStorage.getItem(LK),th=localStorage.getItem(TK)||'auto';
+  return '<h1>Réglages</h1>'+`<div class="card"><b>Accès aux données d'utilisation :</b> ${granted?'accordé':'non accordé'}<p class="sub">Permission Android utilisée pour lire le temps passé dans chaque appli. Rien n'est envoyé sur un serveur.</p><button class="p" onclick="US&&US.openSettings()">Ouvrir les réglages Android</button></div>`
+   +`<div class="card"><b>Dernière synchro :</b> ${l?new Date(l).toLocaleString('fr-FR'):'jamais'}<br><br><button onclick="go()">Synchroniser maintenant</button></div>`
+   +`<div class="card"><b>Thème</b><br><select onchange="theme(this.value)">${[['auto','Automatique'],['light','Clair'],['dark','Sombre']].map(o=>`<option value="${o[0]}" ${o[0]==th?'selected':''}>${o[1]}</option>`).join('')}</select></div>`
+   +`<div class="card"><b>Confidentialité</b><p>Données stockées localement. Aucune vente ni partage.</p><button onclick="wipe()">Supprimer toutes mes données</button></div>`+(msg?`<p>${esc(msg)}</p>`:'');
+}
+function theme(v){localStorage.setItem(TK,v);v=='auto'?document.documentElement.removeAttribute('data-theme'):document.documentElement.setAttribute('data-theme',v)}
+function wipe(){if(confirm('Supprimer tout l\'historique ?')){D={};localStorage.removeItem(K);localStorage.removeItem(LK);draw()}}
+function draw(){
+  document.getElementById('nav').innerHTML=TABS.map(t=>`<button class="${t[0]==tab?'on':''}" onclick="tab='${t[0]}';draw()">${t[1]}</button>`).join('');
+  let h;
+  if(!granted&&tab!='set'&&US)h='<h1>Autorisation requise</h1><p>Active « Accès aux données d\'utilisation » pour ScreenTime Stats afin de lire ton temps d\'écran.</p><button class="p" onclick="US.openSettings()">Ouvrir les réglages Android</button>';
+  else h={home,stats,apps,hist,set:settings}[tab]();
+  document.getElementById('app').innerHTML=h;
+}
+async function go(){try{await sync()}catch(e){msg='Erreur de synchro : '+e}draw()}
+theme(localStorage.getItem(TK)||'auto');
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)go()});
+draw();go();
+</script></body></html>

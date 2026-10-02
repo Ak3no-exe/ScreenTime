@@ -1,0 +1,8 @@
+{
+  "appId": "com.screentimestats.app",
+  "appName": "ScreenTime Stats",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
